@@ -240,3 +240,59 @@ def test_hasAvailableSlotFor_full_inventory_no_match():
         slot.add(Stone())
 
     assert inventoryInstance.hasAvailableSlotFor(Grass) is False
+
+
+def test_placeIntoSlot_uses_the_requested_slot():
+    inventoryInstance = createInventory()
+    item = createGrassEntity()
+
+    assert inventoryInstance.placeIntoSlot(7, item) is True
+    assert inventoryInstance.getInventorySlots()[7].getContents() == [item]
+    assert inventoryInstance.getInventorySlots()[0].isEmpty() is True
+
+
+def test_placeIntoSlot_stacks_onto_a_matching_item():
+    inventoryInstance = createInventory()
+    inventoryInstance.placeIntoSlot(4, createGrassEntity())
+
+    assert inventoryInstance.placeIntoSlot(4, createGrassEntity()) is True
+    assert inventoryInstance.getInventorySlots()[4].getNumItems() == 2
+
+
+def test_placeIntoSlot_refuses_a_full_matching_stack():
+    inventoryInstance = createInventory()
+    slot = inventoryInstance.getInventorySlots()[4]
+    for _ in range(slot.getMaxStackSize()):
+        slot.add(createGrassEntity())
+
+    assert inventoryInstance.placeIntoSlot(4, createGrassEntity()) is False
+    assert slot.getNumItems() == slot.getMaxStackSize()
+
+
+def test_placeIntoSlot_refuses_a_slot_holding_a_different_item():
+    inventoryInstance = createInventory()
+    inventoryInstance.placeIntoSlot(2, Stone())
+
+    assert inventoryInstance.placeIntoSlot(2, createGrassEntity()) is False
+    assert inventoryInstance.getInventorySlots()[2].getNumItems() == 1
+
+
+def test_placeIntoSlot_refuses_an_index_outside_the_inventory():
+    inventoryInstance = createInventory()
+
+    # A save written when the inventory was larger, or a corrupted index, must
+    # not raise and must not wrap around onto an unrelated slot.
+    assert inventoryInstance.placeIntoSlot(25, createGrassEntity()) is False
+    assert inventoryInstance.placeIntoSlot(-1, createGrassEntity()) is False
+    assert inventoryInstance.getNumItems() == 0
+
+
+def test_placeIntoSlot_refuses_a_non_integer_index():
+    inventoryInstance = createInventory()
+
+    # A missing slotIndex arrives as None, and bool is an int subclass, so True
+    # would otherwise be accepted as slot 1.
+    assert inventoryInstance.placeIntoSlot(None, createGrassEntity()) is False
+    assert inventoryInstance.placeIntoSlot(True, createGrassEntity()) is False
+    assert inventoryInstance.placeIntoSlot("3", createGrassEntity()) is False
+    assert inventoryInstance.getNumItems() == 0

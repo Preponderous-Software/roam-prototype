@@ -141,9 +141,22 @@ class InventoryJsonReaderWriter:
         if inventoryJson is None:
             return inventory
         for slot in inventoryJson["inventorySlots"]:
+            slotIndex = slot.get("slotIndex")
             for entityJson in slot["slotContents"]:
                 entity = self._createEntityFromJson(entityJson)
-                inventory.placeIntoFirstAvailableInventorySlot(entity)
+                # Restore into the saved slot so the player's arrangement (and
+                # therefore the hotbar) survives the round trip. A slot index
+                # that no longer fits the inventory falls back to first-available
+                # so older saves still load with nothing lost.
+                if inventory.placeIntoSlot(slotIndex, entity):
+                    continue
+                if not inventory.placeIntoFirstAvailableInventorySlot(entity):
+                    _logger.error(
+                        "failed to restore inventory item: no inventory space available",
+                        entityClass=entityJson.get("entityClass"),
+                        entityId=entityJson.get("entityId"),
+                        slotIndex=slotIndex,
+                    )
         return inventory
 
     def _createEntityFromJson(self, entityJson):

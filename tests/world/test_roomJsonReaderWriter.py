@@ -30,6 +30,7 @@ from entity.wheat import Wheat
 from entity.wheatSeed import WheatSeed
 from entity.woodFloor import WoodFloor
 from entity.youngCrop import YoungCrop
+from world import roomJsonReaderWriter as roomJsonReaderWriterModule
 from world.roomJsonReaderWriter import RoomJsonReaderWriter
 
 
@@ -301,3 +302,82 @@ def test_chest_round_trip_preserves_stored_items(resolve, test_config, tmp_path)
 
     assert isinstance(restored, Chest)
     assert restored.getStoredInventory().getNumItems() == 2
+
+
+def test_chest_round_trip_preserves_stored_slot_positions(
+    resolve, test_config, tmp_path
+):
+    # A chest packed with gaps must come back packed the same way, not
+    # re-collapsed onto the first free slots.
+    roomJsonReaderWriter = createRoomJsonReaderWriter(resolve, test_config, tmp_path)
+    chest = Chest()
+    chest.setEnvironmentID(uuid4())
+    chest.setGridID(uuid4())
+    chest.setLocationID(str(uuid4()))
+    # Arranged through the slots directly rather than via placeIntoSlot, so the
+    # assertion measures the restore path alone.
+    chest.getStoredInventory().getInventorySlots()[5].add(Apple())
+    chest.getStoredInventory().getInventorySlots()[12].add(OakWood())
+
+    entityJson = roomJsonReaderWriter.generateJsonForEntity(chest)
+    restored = roomJsonReaderWriter.generateEntityFromJson(entityJson)
+
+    slots = restored.getStoredInventory().getInventorySlots()
+    occupied = {index for index, slot in enumerate(slots) if not slot.isEmpty()}
+    assert occupied == {5, 12}
+    assert isinstance(slots[5].getContents()[0], Apple)
+    assert isinstance(slots[12].getContents()[0], OakWood)
+
+
+def test_stored_inventory_restore_failure_logs_structured_fields(
+    resolve, test_config, tmp_path, monkeypatch
+):
+    # structlog is configured without PositionalArgumentsFormatter, so a
+    # printf-style message would be emitted with its %s placeholders intact.
+    roomJsonReaderWriter = createRoomJsonReaderWriter(resolve, test_config, tmp_path)
+
+    class RefusingInventory:
+        def placeIntoSlot(self, index, item):
+            return False
+
+        def placeIntoFirstAvailableInventorySlot(self, item):
+            return False
+
+    class RecordingLogger:
+        def __init__(self):
+            self.calls = []
+
+        def error(self, event, *args, **kwargs):
+            self.calls.append({"event": event, "args": args, "kwargs": kwargs})
+
+    recordingLogger = RecordingLogger()
+    monkeypatch.setattr(roomJsonReaderWriterModule, "_logger", recordingLogger)
+
+    apple = Apple()
+    roomJsonReaderWriter._restoreStoredInventory(
+        RefusingInventory(),
+        {
+            "inventorySlots": [
+                {
+                    "slotIndex": 6,
+                    "slotContents": [
+                        {
+                            "entityId": str(apple.getID()),
+                            "entityClass": "Apple",
+                            "name": "Apple",
+                            "assetPath": "assets/images/apple.png",
+                            "energy": 25,
+                        }
+                    ],
+                }
+            ]
+        },
+    )
+
+    assert len(recordingLogger.calls) == 1
+    recorded = recordingLogger.calls[0]
+    assert "%s" not in recorded["event"]
+    assert recorded["args"] == ()
+    assert recorded["kwargs"]["entityClass"] == "Apple"
+    assert recorded["kwargs"]["entityId"] == str(apple.getID())
+    assert recorded["kwargs"]["slotIndex"] == 6

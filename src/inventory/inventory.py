@@ -37,6 +37,29 @@ class Inventory:
         _logger.debug("inventory full", itemName=item.getName())
         return False
 
+    def placeIntoSlot(self, index, item):
+        """Place an item into a specific slot.
+
+        Used when restoring a save so items land back in the slot they were
+        stored in. Returns False when the index is not a usable slot number or
+        the slot cannot accept the item, so the caller can fall back to
+        placeIntoFirstAvailableInventorySlot rather than lose the item."""
+        if isinstance(index, bool) or not isinstance(index, int):
+            return False
+        if index < 0 or index >= len(self.inventorySlots):
+            return False
+        inventorySlot = self.inventorySlots[index]
+        if inventorySlot.isEmpty():
+            inventorySlot.add(item)
+            return True
+        if (
+            inventorySlot.getContents()[0].getName() == item.getName()
+            and inventorySlot.getNumItems() < inventorySlot.getMaxStackSize()
+        ):
+            inventorySlot.add(item)
+            return True
+        return False
+
     def removeByItem(self, item):
         for inventorySlot in self.inventorySlots:
             if inventorySlot.isEmpty():
