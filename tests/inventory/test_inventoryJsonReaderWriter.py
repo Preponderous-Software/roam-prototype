@@ -1,10 +1,15 @@
+import json
+from uuid import uuid4
+
 import jsonschema
 import pytest
 
+from entity.apple import Apple
 from entity.chest import Chest
 from entity.goldOre import GoldOre
 from entity.living.livingEntityRegistry import LIVING_ENTITY_TYPES
 from entity.matureCrop import MatureCrop
+from entity.stone import Stone
 from entity.youngCrop import YoungCrop
 from inventory.inventoryJsonReaderWriter import InventoryJsonReaderWriter
 from screen.pickupableEntities import PICKUPABLE_TYPES
@@ -165,6 +170,84 @@ def test_picked_up_chest_round_trips(resolve, tmp_path, test_config):
     assert len(items) == 1
     assert isinstance(items[0], Chest)
     assert items[0].getStoredInventory().getNumItems() == 0
+
+
+def _occupiedSlotIndexes(inventory):
+    return {
+        index
+        for index, slot in enumerate(inventory.getInventorySlots())
+        if not slot.isEmpty()
+    }
+
+
+def test_round_trip_preserves_slot_positions(resolve, tmp_path, test_config):
+    # Slots 0-9 are the hotbar, so re-packing items to the front on load would
+    # rewrite the player's hotbar on every reload.
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    inventory = readerWriter.loadInventory("tests/inventory/inventory.json")
+    # Arranged through the slots directly rather than via placeIntoSlot, so the
+    # assertion measures the loader alone.
+    inventory.getInventorySlots()[3].add(Apple())
+    inventory.getInventorySlots()[17].add(Stone())
+
+    savePath = str(tmp_path / "positioned_inventory.json")
+    assert readerWriter.saveInventory(inventory, savePath) is True
+    restored = readerWriter.loadInventory(savePath)
+
+    assert _occupiedSlotIndexes(restored) == {3, 17}
+    assert isinstance(restored.getInventorySlots()[3].getContents()[0], Apple)
+    assert isinstance(restored.getInventorySlots()[17].getContents()[0], Stone)
+
+
+def test_round_trip_preserves_a_stack_within_its_slot(resolve, tmp_path, test_config):
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    inventory = readerWriter.loadInventory("tests/inventory/inventory.json")
+    for _ in range(3):
+        inventory.getInventorySlots()[9].add(Apple())
+
+    savePath = str(tmp_path / "stacked_inventory.json")
+    assert readerWriter.saveInventory(inventory, savePath) is True
+    restored = readerWriter.loadInventory(savePath)
+
+    assert _occupiedSlotIndexes(restored) == {9}
+    assert restored.getInventorySlots()[9].getNumItems() == 3
+
+
+def test_load_falls_back_when_the_saved_slot_index_is_unusable(
+    resolve, tmp_path, test_config
+):
+    # A save written when the inventory held more slots must still load, with
+    # the out-of-range item placed rather than dropped.
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    savePath = tmp_path / "out_of_range_inventory.json"
+    savePath.write_text(
+        json.dumps(
+            {
+                "inventorySlots": [
+                    {
+                        "slotIndex": 99,
+                        "slotContents": [
+                            {
+                                "entityId": str(uuid4()),
+                                "entityClass": "Apple",
+                                "name": "Apple",
+                                "assetPath": "assets/images/apple.png",
+                                "energy": 25,
+                            }
+                        ],
+                    }
+                ]
+            }
+        )
+    )
+
+    restored = readerWriter.loadInventory(str(savePath))
+
+    assert _occupiedSlotIndexes(restored) == {0}
+    assert isinstance(restored.getInventorySlots()[0].getContents()[0], Apple)
 
 
 def test_picked_up_gold_ore_round_trips(resolve, tmp_path, test_config):
