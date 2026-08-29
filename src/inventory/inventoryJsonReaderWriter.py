@@ -84,6 +84,24 @@ _CROP_ENTITY_CONSTRUCTORS = {
 }
 
 
+def _resolveSelectedSlotIndex(index, numSlots):
+    """Return a slot index that is safe to select, falling back to 0.
+
+    Used on both sides of the round trip. On save it keeps the written value
+    within what schemas/inventory.json accepts, so an unexpected in-memory
+    value cannot fail validation and abort the whole save. On load it keeps a
+    save written against a different inventory size — or one that has been
+    hand-edited — from leaving the selection pointing past the last slot, which
+    getSelectedInventorySlot would raise on. bool is rejected ahead of int
+    because it is an int subclass and True would otherwise select slot 1.
+    """
+    if isinstance(index, bool) or not isinstance(index, int):
+        return 0
+    if index < 0 or index >= numSlots:
+        return 0
+    return index
+
+
 class InventoryJsonReaderWriter:
     def __init__(self, config):
         self.config = config
@@ -115,6 +133,10 @@ class InventoryJsonReaderWriter:
                 {"slotIndex": slotIndex, "slotContents": slotContents}
             )
             slotIndex += 1
+
+        toReturn["selectedInventorySlotIndex"] = _resolveSelectedSlotIndex(
+            inventory.getSelectedInventorySlotIndex(), inventory.getNumInventorySlots()
+        )
 
         with open("schemas/inventory.json") as f:
             inventorySchema = json.load(f)
@@ -157,6 +179,15 @@ class InventoryJsonReaderWriter:
                         entityId=entityJson.get("entityId"),
                         slotIndex=slotIndex,
                     )
+        # The selection sits on top of the restored arrangement. Absent from
+        # saves written before the field existed, which resolve to slot 0 —
+        # the value those loads produced anyway.
+        inventory.setSelectedInventorySlotIndex(
+            _resolveSelectedSlotIndex(
+                inventoryJson.get("selectedInventorySlotIndex"),
+                inventory.getNumInventorySlots(),
+            )
+        )
         return inventory
 
     def _createEntityFromJson(self, entityJson):

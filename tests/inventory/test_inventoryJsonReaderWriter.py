@@ -250,6 +250,83 @@ def test_load_falls_back_when_the_saved_slot_index_is_unusable(
     assert isinstance(restored.getInventorySlots()[0].getContents()[0], Apple)
 
 
+def test_round_trip_preserves_the_selected_hotbar_slot(resolve, tmp_path, test_config):
+    # The arrangement of the hotbar survives a reload; the slot the player was
+    # actually holding has to survive with it.
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    inventory = readerWriter.loadInventory("tests/inventory/inventory.json")
+    inventory.setSelectedInventorySlotIndex(4)
+
+    savePath = str(tmp_path / "selected_slot_inventory.json")
+    assert readerWriter.saveInventory(inventory, savePath) is True
+    restored = readerWriter.loadInventory(savePath)
+
+    assert restored.getSelectedInventorySlotIndex() == 4
+
+
+def test_save_writes_the_selected_slot_index(resolve, tmp_path, test_config):
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    inventory = readerWriter.loadInventory("tests/inventory/inventory.json")
+    inventory.setSelectedInventorySlotIndex(7)
+
+    savePath = tmp_path / "selected_slot_written.json"
+    assert readerWriter.saveInventory(inventory, str(savePath)) is True
+
+    assert json.loads(savePath.read_text())["selectedInventorySlotIndex"] == 7
+
+
+def test_load_defaults_the_selected_slot_when_the_field_is_absent(
+    resolve, tmp_path, test_config
+):
+    # Saves written before the field existed carry no selection; they must load
+    # on slot 0, which is the value those loads produced anyway.
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    savePath = tmp_path / "legacy_inventory.json"
+    savePath.write_text(json.dumps({"inventorySlots": []}))
+
+    restored = readerWriter.loadInventory(str(savePath))
+
+    assert restored.getSelectedInventorySlotIndex() == 0
+
+
+@pytest.mark.parametrize("savedIndex", [99, -1, None, True, "4", 3.0])
+def test_load_defaults_the_selected_slot_when_it_is_unusable(
+    savedIndex, resolve, tmp_path, test_config
+):
+    # getSelectedInventorySlot indexes the slot list directly, so an index that
+    # does not fit the inventory would raise on the first draw.
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    savePath = tmp_path / "bad_selected_slot_inventory.json"
+    savePath.write_text(
+        json.dumps({"inventorySlots": [], "selectedInventorySlotIndex": savedIndex})
+    )
+
+    restored = readerWriter.loadInventory(str(savePath))
+
+    assert restored.getSelectedInventorySlotIndex() == 0
+    assert restored.getSelectedInventorySlot() is restored.getInventorySlots()[0]
+
+
+def test_save_clamps_an_unusable_selected_slot_rather_than_aborting(
+    resolve, tmp_path, test_config
+):
+    # saveInventory aborts the whole save on a schema validation failure, so an
+    # unexpected in-memory index must not be written through as-is.
+    test_config.pathToSaveDirectory = str(tmp_path)
+    readerWriter = resolve(InventoryJsonReaderWriter)
+    inventory = readerWriter.loadInventory("tests/inventory/inventory.json")
+    inventory.setSelectedInventorySlotIndex(-3)
+
+    savePath = tmp_path / "clamped_selected_slot.json"
+    assert readerWriter.saveInventory(inventory, str(savePath)) is True
+
+    assert json.loads(savePath.read_text())["selectedInventorySlotIndex"] == 0
+
+
 def test_picked_up_gold_ore_round_trips(resolve, tmp_path, test_config):
     # Gold is the reward for descending to the deepest cave levels; it must
     # persist like coal and iron already do.
