@@ -10,6 +10,14 @@ from rendering.displayInfo import getScreenSize
 
 _logger = getLogger(__name__)
 
+# Anonymous usage reporting (see src/usageReporting.py). The three
+# usageReporting* settings below are read from config.yml with these defaults,
+# so an installation whose user config predates them still reports until the
+# player sets usageReportingEnabled: false. The key identifies the program
+# "roam" to the trace service and is not a secret.
+USAGE_REPORTING_ENDPOINT_DEFAULT = "https://trace.danielstephenson.dev"
+USAGE_REPORTING_KEY_DEFAULT = "G8sLnYKFvDhXETxGBQHio6XoLWavuBAjrrvoeoHit2M"
+
 
 class Config:
     @staticmethod
@@ -324,6 +332,20 @@ class Config:
         self.npcSimulationRadius = self.getIntValue(
             configValues, "npcSimulationRadius", 1
         )
+        # Anonymous usage reporting (on by default; opt out with
+        # usageReportingEnabled: false). usageReportingAcknowledged records
+        # whether the setting is present in the file at all, which is how the
+        # one-time first-run notice knows it has already been shown.
+        self.usageReportingEnabled = self.getBoolValue(
+            configValues, "usageReportingEnabled", True
+        )
+        self.usageReportingEndpoint = self.getStringValue(
+            configValues, "usageReportingEndpoint", USAGE_REPORTING_ENDPOINT_DEFAULT
+        )
+        self.usageReportingKey = self.getStringValue(
+            configValues, "usageReportingKey", USAGE_REPORTING_KEY_DEFAULT
+        )
+        self.usageReportingAcknowledged = "usageReportingEnabled" in configValues
 
         _logger.debug(
             "config loaded",
@@ -389,6 +411,20 @@ class Config:
                 error=str(e),
                 path=str(configFilePath),
             )
+
+    def acknowledgeUsageReporting(self):
+        # Persist usageReportingEnabled so the first-run notice is shown once:
+        # its presence in the file is the marker. Writes the current value, so
+        # a player who already opted out stays opted out.
+        self._writeKeyValues(
+            {
+                "usageReportingEnabled": "true"
+                if self.usageReportingEnabled
+                else "false"
+            },
+            "failed to save usage reporting setting to config file",
+        )
+        self.usageReportingAcknowledged = True
 
     def saveWindowSize(self, width, height):
         width = max(int(width), self.MIN_WINDOW_SIZE)

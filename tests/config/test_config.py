@@ -518,3 +518,89 @@ def test_save_window_size_preserves_other_config(tmp_path, monkeypatch):
     assert "ticksPerSecond: 60" in content
     assert "savedWindowWidth: 800" in content
     assert "savedWindowHeight: 600" in content
+
+
+# --- anonymous usage reporting settings ---
+
+
+def test_usage_reporting_defaults_to_on_with_the_built_in_endpoint_and_key():
+    from src.config.config import (
+        USAGE_REPORTING_ENDPOINT_DEFAULT,
+        USAGE_REPORTING_KEY_DEFAULT,
+    )
+
+    # isolate_config_file writes an empty file: no usageReporting* keys at all.
+    config = Config()
+
+    assert config.usageReportingEnabled is True
+    assert config.usageReportingEndpoint == USAGE_REPORTING_ENDPOINT_DEFAULT
+    assert config.usageReportingEndpoint == "https://trace.danielstephenson.dev"
+    assert config.usageReportingKey == USAGE_REPORTING_KEY_DEFAULT
+    assert config.usageReportingKey != ""
+    assert config.usageReportingAcknowledged is False
+
+
+def test_usage_reporting_opt_out_and_overrides_are_read(tmp_path, monkeypatch):
+    configFilePath = tmp_path / "config.yml"
+    configFilePath.write_text(
+        "usageReportingEnabled: false\n"
+        "usageReportingEndpoint: http://127.0.0.1:1\n"
+        "usageReportingKey: not-the-real-key\n",
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(
+        Config, "getConfigFilePath", staticmethod(lambda: configFilePath)
+    )
+
+    config = Config()
+
+    assert config.usageReportingEnabled is False
+    assert config.usageReportingEndpoint == "http://127.0.0.1:1"
+    assert config.usageReportingKey == "not-the-real-key"
+    assert config.usageReportingAcknowledged is True
+
+
+def test_usage_reporting_setting_present_counts_as_acknowledged(tmp_path, monkeypatch):
+    configFilePath = tmp_path / "config.yml"
+    configFilePath.write_text("usageReportingEnabled: true\n", encoding="utf-8")
+    monkeypatch.setattr(
+        Config, "getConfigFilePath", staticmethod(lambda: configFilePath)
+    )
+
+    config = Config()
+
+    assert config.usageReportingEnabled is True
+    assert config.usageReportingAcknowledged is True
+
+
+def test_acknowledge_usage_reporting_writes_the_setting_once(tmp_path, monkeypatch):
+    configFilePath = tmp_path / "config.yml"
+    configFilePath.write_text("debug: false\n", encoding="utf-8")
+    monkeypatch.setattr(
+        Config, "getConfigFilePath", staticmethod(lambda: configFilePath)
+    )
+
+    config = Config()
+    assert config.usageReportingAcknowledged is False
+    config.acknowledgeUsageReporting()
+
+    content = configFilePath.read_text(encoding="utf-8")
+    assert content == "debug: false\nusageReportingEnabled: true\n"
+    assert config.usageReportingAcknowledged is True
+    # A second Config sees the marker, so the notice would not be shown again.
+    assert Config().usageReportingAcknowledged is True
+
+
+def test_acknowledge_usage_reporting_keeps_an_opt_out(tmp_path, monkeypatch):
+    configFilePath = tmp_path / "config.yml"
+    configFilePath.write_text("usageReportingEnabled: false\n", encoding="utf-8")
+    monkeypatch.setattr(
+        Config, "getConfigFilePath", staticmethod(lambda: configFilePath)
+    )
+
+    config = Config()
+    config.acknowledgeUsageReporting()
+
+    assert (
+        configFilePath.read_text(encoding="utf-8") == "usageReportingEnabled: false\n"
+    )

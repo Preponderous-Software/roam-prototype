@@ -90,6 +90,9 @@ class TextPlaythrough:
         env = dict(os.environ)
         env["SDL_VIDEODRIVER"] = "dummy"
         env["SDL_AUDIODRIVER"] = "dummy"
+        # A playthrough must never be counted as a player, nor write the
+        # usage-reporting first-run marker into the repo's config.yml.
+        env["ROAM_USAGE_REPORTING"] = "0"
         self._proc = subprocess.Popen(
             [sys.executable, "src/roam.py", "--text"],
             stdin=slave,

@@ -1,0 +1,17 @@
+# Tooling configuration only; the game is not packaged as a distribution.
+# (Test settings live in pytest.ini, which pytest reads in preference to this
+# file.)
+
+[tool.black]
+# The trace usage-reporting client under src/lib/ is vendored byte-for-byte
+# from https://github.com/Stephenson-Software/trace-client-python (apart from
+# the note in its docstring) so it can be diffed against upstream; its test
+# differs only in the import path. Keep black off both so `./format.sh` and the
+# CI check leave them as vendored. force-exclude (not extend-exclude) so the
+# exclusion also holds when the files are named explicitly on the command line.
+force-exclude = '''
+/(
+    src/lib/trace_client\.py
+  | tests/lib/test_trace_client\.py
+)$
+'''

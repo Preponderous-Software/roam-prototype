@@ -38,8 +38,19 @@ pushableStone: true
 dayNightCycleEnabled: true
 dayNightCycleLengthTicks: 54000
 # Check GitHub for a newer release on launch and show a notice on the main menu.
-# Set to false to disable the only network request Roam makes.
+# Set to false to disable the update check. Roam's only other network requests
+# are usage reporting (usageReportingEnabled, below) and, with npcMode: cpc,
+# the Claude API.
 checkForUpdates: true
+# Anonymous usage reporting: on launch Roam sends a "startup" event, and on
+# opening a save a "world-loaded" event, to https://trace.danielstephenson.dev.
+# Each carries the program name ("roam") and the game version only — never a
+# username, machine name, address, path or save name. Never sent from the
+# browser build. On by default; the first launch logs a one-line notice and
+# writes usageReportingEnabled here so it is not shown again.
+# usageReportingEnabled: false
+# usageReportingEndpoint and usageReportingKey may be set here to point a
+# build at a different trace server; the defaults are built in.
 # NPCs / CPCs — autonomous agents that mimic player behavior.
 # npcMode: "npc" = deterministic FSM; "cpc" = Claude AI (requires ANTHROPIC_API_KEY)
 npcEnabled: true
