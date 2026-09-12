@@ -100,6 +100,7 @@ from config.config import Config
 from config.keyBindings import KeyBindings
 from inventory.inventory import Inventory
 from gameLogging.logger import getLogger
+from lib.trace_client import TraceClient
 from player.player import Player
 from rendering.renderer import Renderer
 from rendering.inputSource import InputSource
@@ -118,6 +119,7 @@ from screen.statsScreen import StatsScreen
 from stats.stats import Stats
 from ui.status import Status
 from screen.worldScreen import WorldScreen
+from usageReporting import createTraceClient, showFirstRunNotice, versionTags
 from world.tickCounter import TickCounter
 
 _logger = getLogger(__name__)
@@ -126,9 +128,15 @@ _logger = getLogger(__name__)
 # @author Daniel McCoy Stephenson
 # @since August 8th, 2022
 class Roam:
-    def __init__(self, config: Config, textMode=False, frontend=None):
+    def __init__(self, config: Config, textMode=False, frontend=None, traceClient=None):
         self.config = config
         self.textMode = textMode
+        # Usage reporting is main()'s decision (settings, browser build, env);
+        # a Roam built without a client — the Pyodide entry point, tests —
+        # reports nothing.
+        self.traceClient = (
+            traceClient if traceClient is not None else TraceClient.disabled()
+        )
         # The frontend owns the display + input lifecycle; the game depends only
         # on the Renderer/InputSource/Clock it provides (epic #433). Selecting a
         # different frontend swaps the whole backend with no game-logic change.
@@ -210,6 +218,9 @@ class Roam:
 
     def initializeWorldScreen(self):
         self.worldScreen.initialize()
+        # A save was opened (new or existing): the one usage action reported
+        # besides startup. Version only — never the save name or path.
+        self.traceClient.report("world-loaded", tags=versionTags())
 
     def quitApplication(self):
         if self.renderer.supportsImageLoading():
@@ -341,6 +352,14 @@ def main(argv):
 
     config = Config()
 
+    # Anonymous usage reporting (src/usageReporting.py): a disabled client when
+    # opted out, in the browser build, or under ROAM_USAGE_REPORTING=0, so
+    # nothing below can block or raise on the network. The first-run notice is
+    # logged once, before the frontend takes over the terminal in text mode.
+    traceClient = createTraceClient(config)
+    showFirstRunNotice(config)
+    traceClient.report("startup", tags=versionTags())
+
     if "--web" in argv:
         from rendering.webFrontend import WebFrontend
 
@@ -358,7 +377,7 @@ def main(argv):
                     session.sessionId,
                     "defaultsavefile",
                 )
-            roam = Roam(sessionConfig, frontend=session)
+            roam = Roam(sessionConfig, frontend=session, traceClient=traceClient)
             # Web sessions have a fixed per-session save path — skip the main
             # menu's save selection screen and go straight to the world.
             roam.initializeWorldScreen()
@@ -372,12 +391,15 @@ def main(argv):
             except KeyboardInterrupt:
                 pass
 
-        WebFrontend(wsPort=config.webWsPort, httpPort=config.webHttpPort).serve(
-            _sessionGameLoop
-        )
+        try:
+            WebFrontend(wsPort=config.webWsPort, httpPort=config.webHttpPort).serve(
+                _sessionGameLoop
+            )
+        finally:
+            traceClient.close()
         return 0
 
-    roam = Roam(config, textMode=_shouldUseTextMode(argv))
+    roam = Roam(config, textMode=_shouldUseTextMode(argv), traceClient=traceClient)
     try:
         while True:
             result = roam.run()
@@ -391,6 +413,7 @@ def main(argv):
         # Always restore the frontend (e.g. put the terminal back to normal mode
         # in text mode), even on an interrupt or unexpected error.
         roam.frontend.quit()
+        traceClient.close()
     return 0
 
 

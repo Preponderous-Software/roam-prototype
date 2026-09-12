@@ -154,6 +154,17 @@ Linux / other | `saves/` | `config.yml` | `screenshots/`
 
 You can override the save location by setting `pathToSaveDirectory` in `config.yml`, or the whole saves directory by setting the `ROAM_SAVE_DIR` environment variable, which takes precedence over both `pathToSaveDirectory` and the table above. `ROAM_SAVE_DIR` applies to a server-side run of the game; saves made in the [browser build](#play-in-a-browser-from-source) are held by the browser, so it has no effect there.
 
+### Usage reporting
+Roam reports that it is being played, anonymously, so the number of installations actually in use can be seen. On launch it sends a `startup` event, and each time a save is opened a `world-loaded` event, to [trace](https://github.com/Stephenson-Software/trace) at `https://trace.danielstephenson.dev`. Each event carries the program name (`roam`) and the game version only — never a username, machine name, IP address, path or save name. The request is made on a background thread, never blocks or interrupts the game, and is dropped if the service cannot be reached.
+
+Reporting is on by default. The first launch after installing a version with it logs a one-line notice and records the setting in your `config.yml` (see the table above for where that is). To turn it off, set:
+
+```yaml
+usageReportingEnabled: false
+```
+
+The [browser build](#play-in-a-browser-from-source) never reports. Setting the `ROAM_USAGE_REPORTING=0` environment variable also turns reporting off for a single run, which is what the test harness does. The client is the vendored `src/lib/trace_client.py` (standard library only).
+
 ## Support
 You can find the support discord server [here](https://discord.gg/49J4RHQxhy).
 

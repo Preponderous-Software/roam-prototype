@@ -146,6 +146,8 @@ class _PyodideFrontend:
 
 
 config = Config()
+# No traceClient: the browser build never reports usage (no OS threads or
+# sockets under Emscripten), so Roam keeps its default disabled client.
 roam = Roam(config, frontend=_PyodideFrontend())
 
 _post({"type": "ready"})
